@@ -1,16 +1,15 @@
-#include <stdio.h>
-#include <stdlib.h>
+#include "parsing.h"
 #include "mpc.h"
 
 /* If compiling on windows */
 #ifdef _WIN32
-#include <string.h> 
+
 char * readline( char *prompt );
+
+static char buffer[2048]; //2^10
 /* Static global variable is only seen within the file it's declared in  
-	Static local variable can is saved between invocations
-	size(input) = 2048 = 2^10 
+  Static local variable can is saved between invocations
 */
-static char buffer[2048];
 
 /* Fake readline function */
 char * readline( char *prompt ) {
@@ -26,12 +25,45 @@ char * readline( char *prompt ) {
 void add_history( char* unused ){};
 
 /* Otherwise include editline headers */
-#else
-/* to use the editline library 
-	Linux: sudo apt-get install libedit -dev */
-#include <editline/readline.h>
+#else	
+#include <editline/readline.h> /* Linux: sudo apt-get install libedit -dev */
 #include <editline/history.h>
 #endif
+
+/* Use operator strings to see which operation to performs */
+long eval_op(long x, char* op, long y) {
+  if(strcmp(op, "+") == 0 ) { return x + y; }
+  if(strcmp(op, "-") == 0 ) { return x - y; }
+  if(strcmp(op, "*") == 0 ) { return x * y; }
+  if(strcmp(op, "/") == 0 ) { return x / y; }
+  
+  return 0;
+}
+
+long eval(mpc_ast_t* t) {
+  
+  /* If tagged as number return directly */
+  if( strstr(t->tag, "number")){
+    return atoi(t->contents);
+  }
+
+  /* The operator is always the second child. */
+  char *op = t->children[1]->contents;
+
+  /* We store the third child in 'x' */
+  long x = eval(t->children[2]); /*recursive step */
+
+  /* Iterate the remaining children and combining. */
+  int i = 3;
+  while( strstr( t->children[i]->tag, "expr" ) ) {
+    x = eval_op(x, op, eval(t->children[i])); //evaluate the operation at the trees child [i]
+    i++;
+  }
+
+  return x;
+
+
+}
 
 
 int main(int argc, char ** argv) {
@@ -58,15 +90,17 @@ int main(int argc, char ** argv) {
 
 	while( 1 ){
 
-	 char* input = readline("lispy> ");
+	 char* input = readline("JLISP> ");
     add_history(input);
     
     /* Attempt to parse the user input */
     mpc_result_t r;
     if (mpc_parse("<stdin>", input, Lispy, &r)) {
-      /* On success print and delete the AST */
-      mpc_ast_print(r.output);
+      
+      long result = eval(r.output);
+      printf( "%li\n\n" , result );
       mpc_ast_delete(r.output);
+
     } else {
       /* Otherwise print and delete the Error */
       mpc_err_print(r.error);
